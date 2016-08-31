@@ -13,6 +13,6 @@ Launching the proxy server executable
 First compile the files using the Makefile and then execute the binary. The Binary execution command must be passed the Port number as an arguement.
 
 1. make
-2. ./proxy <Port number>
+2. ./proxy \<Port number\>
 
 Port numbers are limited to the range 0-65535. Usually port numbers above 5000 are available. It may seldom happen that the command 2 aborts with the message: "Error on Binding". In that case, probably the port asked by the user is already taken by some other process. Repeat the step 2 with a different port number.
