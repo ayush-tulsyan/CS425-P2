@@ -1,3 +1,8 @@
+# binaries
+*
+!*.*
+!*/
+
 # Compiled Object files
 *.slo
 *.lo
@@ -30,3 +35,6 @@
 
 # Project Report & Guide
 *.pdf
+
+#Log files
+*.log

@@ -273,6 +273,8 @@ int ParsedRequest_unparse(struct ParsedRequest *pr, char *buf, size_t buflen) {
     size_t tmp;
     if (ParsedRequest_printRequestLine(pr, buf, buflen, &tmp) < 0)
 	    return -1;
+    
+    ParsedHeader_remove(pr, "Host: ");
     if (ParsedHeader_printHeaders(pr, buf+tmp, buflen-tmp) < 0)
 	    return -1;
     return 0;
@@ -525,6 +527,17 @@ int ParsedRequest_printRequestLine(struct ParsedRequest *pr, char * buf, size_t 
     current[0]  = ' ';
     current += 1;
 
+    memcpy(current, pr->path, strlen(pr->path));
+    current += strlen(pr->path);
+
+    memcpy(current, pr->version, strlen(pr->version));
+    current += strlen(pr->version);
+    memcpy(current, "\r\n", 2);
+    current +=2;
+
+    memcpy(current, "Host: ", 6);
+    current += 6;
+
     memcpy(current, pr->protocol, strlen(pr->protocol));
     current += strlen(pr->protocol);
     memcpy(current, "://", 3);
@@ -537,17 +550,10 @@ int ParsedRequest_printRequestLine(struct ParsedRequest *pr, char * buf, size_t 
         memcpy(current, pr->port, strlen(pr->port));
         current += strlen(pr->port);
     }
-    /* path is at least a slash */
-    memcpy(current, pr->path, strlen(pr->path));
-    current += strlen(pr->path);
-
-    current[0] = ' ';
+    
+    memcpy(current, "/", 1);
     current += 1;
 
-    memcpy(current, pr->version, strlen(pr->version));
-    current += strlen(pr->version);
-    memcpy(current, "\r\n", 2);
-    current +=2;
     *tmp = current-buf;
     return 0;
 }
