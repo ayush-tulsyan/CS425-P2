@@ -154,7 +154,7 @@ int ParsedHeader_printHeaders(struct ParsedRequest * pr, char * buf, size_t len)
     size_t i = 0;
 
     if(len < ParsedHeader_headersLen(pr)) {
-        debug("buffer for printing headers too small\n");
+        debug("buffer for printing headers too small %d, %d\n", len, ParsedHeader_headersLen(pr));
         return -1;
     }
 
@@ -273,8 +273,9 @@ int ParsedRequest_unparse(struct ParsedRequest *pr, char *buf, size_t buflen) {
     size_t tmp;
     if (ParsedRequest_printRequestLine(pr, buf, buflen, &tmp) < 0)
 	    return -1;
-    
-    ParsedHeader_remove(pr, "Host: ");
+
+    ParsedHeader_remove(pr, "Host");
+
     if (ParsedHeader_printHeaders(pr, buf+tmp, buflen-tmp) < 0)
 	    return -1;
     return 0;
@@ -366,7 +367,7 @@ int ParsedRequest_parse(struct ParsedRequest * parse, const char *buf, int bufle
         free(tmp_buf);
         free(parse->buf);
         parse->buf = NULL;
-        return -1;
+        return -2;
     }
 
     full_addr = strtok_r(NULL, " ", &saveptr);
@@ -376,7 +377,7 @@ int ParsedRequest_parse(struct ParsedRequest * parse, const char *buf, int bufle
         free(tmp_buf);
         free(parse->buf);
         parse->buf = NULL;
-        return -1;
+        return -3;
     }
 
     parse->version = full_addr + strlen(full_addr) + 1;
@@ -386,7 +387,7 @@ int ParsedRequest_parse(struct ParsedRequest * parse, const char *buf, int bufle
         free(tmp_buf);
         free(parse->buf);
         parse->buf = NULL;
-        return -1;
+        return -3;
     }
     if (strncmp (parse->version, "HTTP/", 5)) {
         debug( "invalid request line, unsupported version %s\n", 
@@ -394,7 +395,7 @@ int ParsedRequest_parse(struct ParsedRequest * parse, const char *buf, int bufle
         free(tmp_buf);
         free(parse->buf);
         parse->buf = NULL;
-        return -1;
+        return -3;
     }
 
 
@@ -404,7 +405,7 @@ int ParsedRequest_parse(struct ParsedRequest * parse, const char *buf, int bufle
         free(tmp_buf);
         free(parse->buf);
         parse->buf = NULL;
-        return -1;
+        return -3;
     }
 
     const char *rem = full_addr + strlen(parse->protocol) + strlen("://");
@@ -416,7 +417,7 @@ int ParsedRequest_parse(struct ParsedRequest * parse, const char *buf, int bufle
         free(tmp_buf);
         free(parse->buf);
         parse->buf = NULL;
-        return -1;
+        return -3;
     }
 
     if (strlen(parse->host) == abs_uri_len) {
@@ -424,7 +425,7 @@ int ParsedRequest_parse(struct ParsedRequest * parse, const char *buf, int bufle
         free(tmp_buf);
         free(parse->buf);
         parse->buf = NULL;
-        return -1;
+        return -3;
     }
 
     parse->path = strtok_r(NULL, " ", &saveptr);
@@ -438,7 +439,7 @@ int ParsedRequest_parse(struct ParsedRequest * parse, const char *buf, int bufle
         free(parse->buf);
         parse->buf = NULL;
         parse->path = NULL;
-        return -1;
+        return -3;
     } else {
         // copy parse->path, prefix with a slash
         char *tmp_path = parse->path;
@@ -459,7 +460,7 @@ int ParsedRequest_parse(struct ParsedRequest * parse, const char *buf, int bufle
         free(parse->path);
         parse->buf = NULL;
         parse->path = NULL;
-        return -1;
+        return -3;
     }
 
     if (parse->port != NULL) {
@@ -471,7 +472,7 @@ int ParsedRequest_parse(struct ParsedRequest * parse, const char *buf, int bufle
             free(parse->path);
             parse->buf = NULL;
             parse->path = NULL;
-            return -1;
+            return -3;
         }
     }
 
@@ -484,7 +485,7 @@ int ParsedRequest_parse(struct ParsedRequest * parse, const char *buf, int bufle
         //debug("line %s %s", parse->version, currentHeader);
 
         if (ParsedHeader_parse(parse, currentHeader)) {
-            ret = -1;
+            ret = -3;
             break;
         }
 
@@ -529,6 +530,8 @@ int ParsedRequest_printRequestLine(struct ParsedRequest *pr, char * buf, size_t 
 
     memcpy(current, pr->path, strlen(pr->path));
     current += strlen(pr->path);
+    current[0]  = ' ';
+    current += 1;
 
     memcpy(current, pr->version, strlen(pr->version));
     current += strlen(pr->version);
@@ -538,10 +541,11 @@ int ParsedRequest_printRequestLine(struct ParsedRequest *pr, char * buf, size_t 
     memcpy(current, "Host: ", 6);
     current += 6;
 
-    memcpy(current, pr->protocol, strlen(pr->protocol));
+    /*memcpy(current, pr->protocol, strlen(pr->protocol));
     current += strlen(pr->protocol);
     memcpy(current, "://", 3);
-    current += 3;
+    current += 3;*/
+
     memcpy(current, pr->host, strlen(pr->host));
     current += strlen(pr->host);
     if(pr->port != NULL) {
@@ -551,8 +555,8 @@ int ParsedRequest_printRequestLine(struct ParsedRequest *pr, char * buf, size_t 
         current += strlen(pr->port);
     }
     
-    memcpy(current, "/", 1);
-    current += 1;
+    memcpy(current, "\r\n", 2);
+    current +=2;
 
     *tmp = current-buf;
     return 0;

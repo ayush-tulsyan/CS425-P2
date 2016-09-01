@@ -6,40 +6,58 @@
 #include <sys/wait.h>
 
 #define Buf_Size_Initial 1024
-#define Ip_addr 1
-#define Server_Name_addr 2
+
+char ErrorReply[3][378];
+int ErrorLen[] = {109, 175, 141}; //[0] = 109, ErrorLen[1] = 175, ErrorLen[2] = 141;
+
+void initiateErrorMsgs() {
+    char ErrorMsg[3][22];
+    sprintf(ErrorMsg[0], "Bad Request");
+    sprintf(ErrorMsg[1], "Internal Server Error");
+    sprintf(ErrorMsg[2], "Not Implemented");
+    int ErrorId[] = {400, 500, 501};
+    int len, i;
+    for (i = 0; i < 3; ++i) {
+        len = sprintf(ErrorReply[i], "HTTP/1.0 %d %s\r\n", ErrorId[i], ErrorMsg[i]);
+        len += sprintf(ErrorReply[i] + len, "Content-Length: %d\r\n", ErrorLen[i]);
+        len += sprintf(ErrorReply[i] + len, "Content-Type: text/html\r\n");
+        len += sprintf(ErrorReply[i] + len, "Connection: close\r\n\r\n");
+        len += sprintf(ErrorReply[i] + len, "<HEAD><TITLE>%d %s</TITLE></HEAD>\r\n", ErrorId[i], ErrorMsg[i]);
+        len += sprintf(ErrorReply[i] + len, "<BODY><H1>%d %s</H1>\r\n", ErrorId[i], ErrorMsg[i]);
+        switch(i) {
+            case 0:
+            len += sprintf(ErrorReply[i] + len, "Bad Request Received.\r\n");
+            break;
+            case 1:
+            len += sprintf(ErrorReply[i] + len, "The request could not be processed due to an Internal server error.\r\n");
+            break;
+            case 2:
+            len += sprintf(ErrorReply[i] + len, "The required method has not been Implemented.\r\n");
+            break;
+        }
+        len += sprintf(ErrorReply[i] + len, "</BODY>\r\n%c", 0);
+        ErrorLen[i] = len;
+    }
+    return;
+}
 
 int sendErrorReply(int SockId, int errorID) {
     
-    char buffer[Buf_Size_Initial];
-    int len;
-    len = sprintf(buffer, "HTTP/1.0 500 Internal Server Error\r\n");
-    len += sprintf(buffer + len, "Connection: close\r\n");
-    len += sprintf(buffer + len, "Content-Length: %d\r\n", 175);
-    len += sprintf(buffer + len, "Content-Type: text/html\r\n\r\n");
-    len += sprintf(buffer + len, "<HEAD><TITLE>500 Internal Server Error</TITLE></HEAD>\r\n");
-    len += sprintf(buffer + len, "<BODY><H1>500 Internal Server Error</H1>\r\n");
-    len += sprintf(buffer + len, "The request could not be processed due to an Internal server error.\r\n");
-    len += sprintf(buffer + len, "</BODY>\r\n");
-
-    send(SockId, buffer, len, 0);
-    
+    int flag;
+    switch(errorID) {
+        case 400:
+            flag = 0; break;
+        case 500:
+            flag = 1; break;
+        case 501:
+            flag = 2; break;
+        default:
+            return -1;
+    }
+    write(SockId, ErrorReply[flag], ErrorLen[flag]);
+    printf("%s\n", ErrorReply[flag]);
     return 0;
 }
-
-/*char *getIPbyname(ParsedRequest *req) {
-    int flag;
-    flag = hostAddressType(req);
-    if (flag == Server_Name_addr) {
-        struct hostent* destInfo = gethostbyname(req->host);
-        if (destInfo != NULL) {
-
-        }
-    } else if (flag == Ip_addr) {
-        return req->host;
-    }
-    return NULL;
-}*/
 
 int EstablishConnection(ParsedRequest *req, int *sockid) {
     if (req && req->host) {
@@ -76,8 +94,8 @@ int EstablishConnection(ParsedRequest *req, int *sockid) {
     return 0;
 }
 
-int RecvFromClient(int SockId, char *buffer) {
-    int len = 0, size = Buf_Size_Initial, flag = 1;
+int RecvFromClient(int SockId, char *buffer, int size) {
+    int len = 0, flag = 1;
     char *pstn;
     if (buffer == NULL) 
         return -1;
@@ -106,16 +124,22 @@ int RecvFromClient(int SockId, char *buffer) {
     return len;
 }
 
-int RecvFromServer(int SockId, char *buffer) {
-    int len = 0, size = Buf_Size_Initial;
+size_t RecvFromServer(int SockId, char *buffer, size_t size) {
+    size_t len = 0, temp;
     if (buffer == NULL)
         return -1;
 
-    len = recv(SockId, buffer, size, 0);
-    while(len == size) {
-        buffer = (char *) realloc (buffer, 2 * size * sizeof(char));
-        len += recv(SockId, buffer + len, size, 0);
-        size *= 2;
+    temp = read(SockId, buffer, size);
+    len = temp;
+    char *index = buffer + len;
+    while(temp != 0) {
+        if(len >= size - 2 * Buf_Size_Initial) {
+            buffer = (char *)realloc(buffer, 2 * size * sizeof(char));
+            size *= 2;
+        }        
+        temp = read(SockId, index, size - len);
+        len += temp;
+        index += temp;
     }
 
     if (len <= 0) 
@@ -125,12 +149,12 @@ int RecvFromServer(int SockId, char *buffer) {
 }
 
 int dealClient(int SockId) {
-    char *buffer, *send_buf;
-    int  destSockId, ret;
+    char *buffer, *send_buf, *rep_buf;
+    int  destSockId, ret, temp;
     size_t len;
 
     buffer = (char *)malloc(Buf_Size_Initial * sizeof(char));
-    len = RecvFromClient(SockId, buffer);
+    len = RecvFromClient(SockId, buffer, Buf_Size_Initial);
     if (len <= 0) {
         free(buffer);
         sendErrorReply(SockId, 500);
@@ -141,9 +165,14 @@ int dealClient(int SockId) {
     //is dynamically allocated.
     ParsedRequest *req = ParsedRequest_create();
     ret = ParsedRequest_parse(req, buffer, len);
-    if (ret < 0) {
+    if (ret == -2) {
+        sendErrorReply(SockId, 501);
+        return -1;
+    } else if (ret == -1) {
         sendErrorReply(SockId, 500);
         return -1;
+    } else if (ret == -3) {
+        sendErrorReply(SockId, 400);
     }
     free(buffer);
 
@@ -152,7 +181,6 @@ int dealClient(int SockId) {
         ParsedRequest_destroy(req);
         return -1;
     }
-    printf("Hey from DC\n");
 
     if (ParsedHeader_set(req, "Connection", "close") < 0) {
         sendErrorReply(SockId, 500);
@@ -181,27 +209,34 @@ int dealClient(int SockId) {
         return -1;
     }
     ParsedRequest_destroy(req);
+    // printf("Hey from DC!\n");
 
-    printf("%s\n", send_buf);
-    if (send(destSockId, send_buf, len + 1, 0) <= 0) {
+    if (write(destSockId, send_buf, len + 1) <= 0) {
         sendErrorReply(SockId, 500);
         return -1;
     }
     free(send_buf);
 
-    buffer = (char *)malloc(Buf_Size_Initial * sizeof(char));
-    len = RecvFromServer(destSockId, buffer);
+    rep_buf = (char *)malloc(4 * Buf_Size_Initial * sizeof(char));
+    len = RecvFromServer(destSockId, rep_buf, 4 * Buf_Size_Initial);
     if (len <= 0) {
         sendErrorReply(SockId, 500);
-        free(buffer);
+        free(rep_buf);
         return -1;
     }
+    printf("%lu\n", len);
+    for (long unsigned i = 0; i < len; ++i) {
+        printf("%c", rep_buf[i]);
+    }
 
-    if (send(SockId, buffer, len, 0) <= 0) {
-        sendErrorReply(SockId, 500);
-        return -1;
-    }    
-    free(buffer);
+    temp = len;
+    while (temp > 0) {
+        ret = write(SockId, rep_buf, temp);
+
+        rep_buf += ret;
+        temp -= ret;
+    }
+    // free(rep_buf - len);
 
     return 0;
 }
@@ -214,6 +249,7 @@ int main(int argc, char * argv[]) {
         return 1;
     }
 
+    initiateErrorMsgs();
 	int sockid, newsockid, serverport, clientIP[4], i;
     struct sockaddr_in serv_addr, cli_addr;
     int  childcount = 0, temp;
